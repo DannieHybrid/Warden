@@ -1,32 +1,53 @@
-import express from "express";
-import {
-  getReputation,
-  updateReputation,
-  getLeaderboard,
-} from "../services/reputationService";
+// src/routes/reputation.ts
+import express, { Request, Response } from "express";
+import { ReputationService } from "../services/reputationService";
 
 const router = express.Router();
 
-router.get("/:wallet", (req, res) => {
-  const wallet = req.params.wallet;
-  const record = getReputation(wallet);
-  if (!record)
-    return res.status(404).json({ error: "No reputation record found" });
-  return res.json(record);
-});
-
-router.post("/update", (req, res) => {
-  const { wallet, delta } = req.body;
-  if (!wallet || typeof delta !== "number") {
-    return res.status(400).json({ error: "wallet and numeric delta required" });
+/**
+ * @route GET /api/reputation/:address
+ * Returns the current reputation of a wallet/agent
+ */
+router.get("/:address", (req: Request, res: Response) => {
+  try {
+    const { address } = req.params;
+    const rep = ReputationService.getReputation(address);
+    res.json(rep);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch reputation" });
   }
-  const updated = updateReputation(wallet, delta);
-  return res.json(updated);
 });
 
-router.get("/leaderboard/all", (req, res) => {
-  const board = getLeaderboard();
-  return res.json(board);
+/**
+ * @route POST /api/reputation/update
+ * Updates reputation score (+/- delta)
+ */
+router.post("/update", (req: Request, res: Response) => {
+  try {
+    const { address, delta, reason } = req.body;
+    if (!address || typeof delta !== "number") {
+      return res.status(400).json({ error: "Missing address or delta" });
+    }
+
+    const rep = ReputationService.updateReputation(address, delta, reason);
+    res.json(rep);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to update reputation" });
+  }
+});
+
+/**
+ * @route GET /api/reputation/leaderboard
+ * Returns top 10 ranked by score
+ */
+router.get("/leaderboard", (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const leaderboard = ReputationService.getLeaderboard(limit);
+    res.json(leaderboard);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch leaderboard" });
+  }
 });
 
 export default router;

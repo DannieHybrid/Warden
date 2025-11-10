@@ -1,9 +1,28 @@
-import express, { Request, Response } from "express";
-const router = express.Router();
+import { Router } from "express";
+import { ReputationService } from "../services/reputationService";
 
-// Example: locked endpoint that requires verified tip
-router.get("/", (req: Request, res: Response) => {
-  res.json({ message: "Access granted ✅" });
+const router = Router();
+
+// Wallet validation
+router.get("/wallet/:pubkey", async (req, res) => {
+  try {
+    const pubKey = req.params.pubkey;
+    res.json({ pubKey });
+  } catch (err) {
+    res.status(400).json({ error: "Invalid public key" });
+  }
+});
+
+// Access gating
+router.get("/:service/:address", async (req, res) => {
+  try {
+    const { service, address } = req.params;
+    const rep = ReputationService.getReputation(address);
+    const hasAccess = rep.score >= 20; // simple gating rule
+    res.json({ service, address, access: hasAccess ? "granted" : "denied" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to check access" });
+  }
 });
 
 export default router;

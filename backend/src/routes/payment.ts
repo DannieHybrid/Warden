@@ -1,48 +1,53 @@
-import express from "express";
-import { x402Middleware } from "../middleware/x402";
-import { verifySolanaTx } from "../utils/solanaUtils";
+import { Router } from "express";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import { sendX402Payment, verifyPayment } from "../middleware/x402";
+import { recordPayment } from "../services/paymentStore";
 
-const router = express.Router();
+const router = Router();
 
-/**
- * @route POST /api/pay
- * Initiates x402 payment challenge
- */
-router.post("/pay", x402Middleware, async (req, res) => {
-  return res.status(402).json({
-    message: "Payment Required",
-    details: req.body,
-  });
+// Send payment
+router.post("/send", async (req, res) => {
+  try {
+    const { fromSecret, toPubkey, amount, memo } = req.body;
+    const from = Keypair.fromSecretKey(Uint8Array.from(fromSecret));
+    const to = new PublicKey(toPubkey);
+    const signature = await sendX402Payment({ from, to, amount, memo });
+
+    await recordPayment({
+      signature,
+      recipient: toPubkey,
+      amount,
+      success: true,
+    });
+    res.json({ signature });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
 });
 
-/**
- * @route POST /api/verify
- * Verifies transaction and returns proof
- */
+// Verify payment
 router.post("/verify", async (req, res) => {
   try {
-    const { txHash, payer } = req.body;
-    if (!txHash || !payer) {
-      return res.status(400).json({ error: "txHash and payer are required" });
-    }
-
-    const verified = await verifySolanaTx(txHash, payer);
-    if (!verified) {
-      return res.status(400).json({ verified: false, error: "Invalid transaction" });
-    }
-
-    return res.status(200).json({
-      verified: true,
-      proof: {
-        txHash,
-        payer,
-        verifiedAt: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error("verify error:", error);
-    return res.status(500).json({ error: "Internal verification error" });
+    const { signature } = req.body;
+    const valid = await verifyPayment(signature);
+    res.json({ signature, verified: valid });
+  } catch (err) {
+    res.status(500).json({ error: "Verification failed" });
   }
+});
+
+// Sandbox/test payment (no real tokens)
+router.post("/sandbox", async (req, res) => {
+  const { toPubkey, amount } = req.body;
+  const fakeSignature = `sandbox-${Date.now()}`;
+  await recordPayment({
+    signature: fakeSignature,
+    recipient: toPubkey,
+    amount,
+    success: true,
+  });
+  res.json({ signature: fakeSignature, verified: true });
 });
 
 export default router;
